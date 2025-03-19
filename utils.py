@@ -55,7 +55,13 @@ def get_web_element_rect(browser, fix_color=True):
                 var vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
                 var vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
                 
+                //  element.getClientRects() 返回一個 ClientRectList 對象,它是一個類數組(array-like)的集合,包含元素的所有邊界矩形(DOMRect 對象)。
+                // ClientRectList 不是真正的數組，因此不能直接使用數組的方法（如 map、filter 等）。
                 var rects = [...element.getClientRects()].filter(bb => {
+                    
+                //  計算矩形的中心點 (center_x, center_y)。
+                //  使用 document.elementFromPoint() 獲取中心點所在的元素。
+                //  如果中心點所在的元素是當前元素或其子元素，則保留該矩形。
                 var center_x = bb.left + bb.width / 2;
                 var center_y = bb.top + bb.height / 2;
                 var elAtCenter = document.elementFromPoint(center_x, center_y);
@@ -219,6 +225,7 @@ def extract_information(text):
         "wait": r"^Wait",
         "goback": r"^GoBack",
         "google": r"^Google",
+        "select": r"Select \[?(\d+)\]?[; ]+\[?(.[^\]]*)\]?",
         "answer": r"ANSWER[; ]+\[?(.[^\]]*)\]?"
     }
 
@@ -229,7 +236,7 @@ def extract_information(text):
                 # no content
                 return key, match.groups()
             else:
-                return key, {"number": match.group(1), "content": match.group(2)} if key in ["type", "scroll"] else {"content": match.group(1)}
+                return key, {"number": match.group(1), "parts": match.group(2)} if key in ["type", "scroll", "select"] else {"parts": match.group(1)}
     return None, None
 
 
@@ -241,7 +248,7 @@ def clip_message(msg, max_img_num):
         if curr_msg['role'] != 'user':
             clipped_msg = [curr_msg] + clipped_msg
         else:
-            if type(curr_msg['content']) == str:
+            if type(curr_msg['parts']) == str:
                 clipped_msg = [curr_msg] + clipped_msg
             elif img_num < max_img_num:
                 img_num += 1
@@ -249,7 +256,7 @@ def clip_message(msg, max_img_num):
             else:
                 curr_msg_clip = {
                     'role': curr_msg['role'],
-                    'content': curr_msg['content'][0]["text"]
+                    'parts': curr_msg['parts'][0]["text"]
                 }
                 clipped_msg = [curr_msg_clip] + clipped_msg
     return clipped_msg
@@ -263,17 +270,17 @@ def clip_message_and_obs(msg, max_img_num):
         if curr_msg['role'] != 'user':
             clipped_msg = [curr_msg] + clipped_msg
         else:
-            if type(curr_msg['content']) == str:
+            if type(curr_msg['parts']) == str:
                 clipped_msg = [curr_msg] + clipped_msg
             elif img_num < max_img_num:
                 img_num += 1
                 clipped_msg = [curr_msg] + clipped_msg
             else:
-                msg_no_pdf = curr_msg['content'][0]["text"].split("Observation:")[0].strip() + "Observation: A screenshot and some texts. (Omitted in context.)"
-                msg_pdf = curr_msg['content'][0]["text"].split("Observation:")[0].strip() + "Observation: A screenshot, a PDF file and some texts. (Omitted in context.)"
+                msg_no_pdf = curr_msg['parts'][0]["text"].split("Observation:")[0].strip() + "Observation: A screenshot and some texts. (Omitted in context.)"
+                msg_pdf = curr_msg['parts'][0]["text"].split("Observation:")[0].strip() + "Observation: A screenshot, a PDF file and some texts. (Omitted in context.)"
                 curr_msg_clip = {
                     'role': curr_msg['role'],
-                    'content': msg_no_pdf if "You downloaded a PDF file" not in curr_msg['content'][0]["text"] else msg_pdf
+                    'parts': msg_no_pdf if "You downloaded a PDF file" not in curr_msg['parts'][0]["text"] else msg_pdf
                 }
                 clipped_msg = [curr_msg_clip] + clipped_msg
     return clipped_msg
@@ -291,11 +298,11 @@ def clip_message_and_obs_text_only(msg, max_tree_num):
                 tree_num += 1
                 clipped_msg = [curr_msg] + clipped_msg
             else:
-                msg_no_pdf = curr_msg['content'].split("Observation:")[0].strip() + "Observation: An accessibility tree. (Omitted in context.)"
-                msg_pdf = curr_msg['content'].split("Observation:")[0].strip() + "Observation: An accessibility tree and a PDF file. (Omitted in context.)"
+                msg_no_pdf = curr_msg['parts'].split("Observation:")[0].strip() + "Observation: An accessibility tree. (Omitted in context.)"
+                msg_pdf = curr_msg['parts'].split("Observation:")[0].strip() + "Observation: An accessibility tree and a PDF file. (Omitted in context.)"
                 curr_msg_clip = {
                     'role': curr_msg['role'],
-                    'content': msg_no_pdf if "You downloaded a PDF file" not in curr_msg['content'] else msg_pdf
+                    'parts': msg_no_pdf if "You downloaded a PDF file" not in curr_msg['parts'] else msg_pdf
                 }
                 clipped_msg = [curr_msg_clip] + clipped_msg
     return clipped_msg
@@ -309,18 +316,19 @@ def print_message(json_object, save_dir=None):
             logging.info(obj)
             remove_b64code_obj.append(obj)
         else:
-            if type(obj['content']) == str:
+            if type(obj['parts']) == str:
                 # print(obj)
                 logging.info(obj)
                 remove_b64code_obj.append(obj)
             else:
                 print_obj = {
                     'role': obj['role'],
-                    'content': obj['content']
+                    'parts': obj['parts'][0]['text']
                 }
-                for item in print_obj['content']:
-                    if item['type'] == 'image_url':
-                        item['image_url'] =  {"url": "data:image/png;base64,{b64_img}"}
+                # for item in print_obj['parts']:
+                #     for key in item.keys():
+                #         if key == 'inline_data':
+                #             item['inline_data'][1] =  {"data": 'b64_img'}
                 # print(print_obj)
                 logging.info(print_obj)
                 remove_b64code_obj.append(print_obj)

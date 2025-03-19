@@ -1,1 +1,3 @@
-{"web_name": "Cambridge Dictionary", "id": "Cambridge Dictionary--29", "ques": "Go to the Plus section of Cambridge Dictionary, find Image quizzes and do an easy quiz about Animals and tell me your final score.", "web": "https://dictionary.cambridge.org/"}
+{"web_name": "ArXiv", "id": "ArXiv--1", "ques": "Search for the latest research papers on quantum computing submitted to ArXiv within the last two days.", "web": "https://arxiv.org/"}
+{"web_name": "ArXiv", "id": "ArXiv--7", "ques": "Find the most recent paper submitted on machine learning in the Computer Science category posted on ArXiv.", "web": "https://arxiv.org/"}
+{"web_name": "ArXiv", "id": "ArXiv--36", "ques": "Search 'CVPR 2023' and 'CVPR2023' through journal ref on ArXiv to see how many results there are respectively.", "web": "https://arxiv.org/"}

@@ -6,7 +6,8 @@ Carefully analyze the visual information to identify the Numerical Label corresp
 4. Wait. Typically used to wait for unfinished webpage processes, with a duration of 5 seconds.
 5. Go back, returning to the previous webpage.
 6. Google, directly jump to the Google search page. When you can't find information in some websites, try starting over with Google.
-7. Answer. This action should only be chosen when all questions in the task have been solved.
+7. Select an option from a dropdown menu.
+8. Answer. This action should only be chosen when all questions in the task have been solved.
 
 Correspondingly, Action should STRICTLY follow the format:
 - Click [Numerical_Label]
@@ -15,6 +16,7 @@ Correspondingly, Action should STRICTLY follow the format:
 - Wait
 - GoBack
 - Google
+- Select [Numerical_Label]; [Option_Value or Option_Text]
 - ANSWER; [content]
 
 Key Guidelines You MUST follow:
@@ -24,12 +26,14 @@ Key Guidelines You MUST follow:
 3) Execute only one action per iteration. 
 4) STRICTLY Avoid repeating the same action if the webpage remains unchanged. You may have selected the wrong web element or numerical label. Continuous use of the Wait is also NOT allowed.
 5) When a complex Task involves multiple questions or steps, select "ANSWER" only at the very end, after addressing all of these questions (steps). Flexibly combine your own abilities with the information in the web page. Double check the formatting requirements in the task when ANSWER. 
+6) When using Select, ensure that the Numerical_Label corresponds to a <select> dropdown menu and that the provided Option_Value or Option_Text matches one of its options.
 * Web Browsing Guidelines *
 1) Don't interact with useless web elements like Login, Sign-in, donation that appear in Webpages. Pay attention to Key Web Elements like search textbox and menu.
 2) Vsit video websites like YouTube is allowed BUT you can't play videos. Clicking to download PDF is allowed and will be analyzed by the Assistant API.
 3) Focus on the numerical labels in the TOP LEFT corner of each rectangle (element). Ensure you don't mix them up with other numbers (e.g. Calendar) on the page.
 4) Focus on the date in task, you must look for results that match the date. It may be necessary to find the correct year, month and day at calendar.
 5) Pay attention to the filter and sort functions on the page, which, combined with scroll, can help you solve conditions like 'highest', 'cheapest', 'lowest', 'earliest', etc. Try your best to find the answer that best fits the task.
+6) When using Select, first analyze the available options, and choose the one that best matches the task requirements.
 
 Your reply should strictly follow the format:
 Thought: {Your brief thoughts (briefly summarize the info that will help ANSWER)}
@@ -46,7 +50,8 @@ SYSTEM_PROMPT_TEXT_ONLY = """Imagine you are a robot browsing the web, just like
 4. Wait. Typically used to wait for unfinished webpage processes, with a duration of 5 seconds.
 5. Go back, returning to the previous webpage.
 6. Google, directly jump to the Google search page. When you can't find information in some websites, try starting over with Google.
-7. Answer. This action should only be chosen when all questions in the task have been solved.
+7. Select an option from a dropdown menu.
+8. Answer. This action should only be chosen when all questions in the task have been solved.
 
 Correspondingly, Action should STRICTLY follow the format:
 - Click [Numerical_Label]
@@ -55,6 +60,7 @@ Correspondingly, Action should STRICTLY follow the format:
 - Wait
 - GoBack
 - Google
+- Select [Numerical_Label]; [Option_Value or Option_Text]
 - ANSWER; [content]
 
 Key Guidelines You MUST follow:
@@ -64,11 +70,13 @@ Key Guidelines You MUST follow:
 3) Execute only one action per iteration. 
 4) STRICTLY Avoid repeating the same action if the webpage remains unchanged. You may have selected the wrong web element or numerical label. Continuous use of the Wait is also NOT allowed.
 5) When a complex Task involves multiple questions or steps, select "ANSWER" only at the very end, after addressing all of these questions (steps). Flexibly combine your own abilities with the information in the web page. Double check the formatting requirements in the task when ANSWER. 
+6) When using Select, ensure that the Numerical_Label corresponds to a <select> dropdown menu and that the provided Option_Value or Option_Text matches one of its options.
 * Web Browsing Guidelines *
 1) Don't interact with useless web elements like Login, Sign-in, donation that appear in Webpages. Pay attention to Key Web Elements like search textbox and menu.
 2) Vsit video websites like YouTube is allowed BUT you can't play videos. Clicking to download PDF is allowed and will be analyzed by the Assistant API.
 3) Focus on the date in task, you must look for results that match the date. It may be necessary to find the correct year, month and day at calendar.
 4) Pay attention to the filter and sort functions on the page, which, combined with scroll, can help you solve conditions like 'highest', 'cheapest', 'lowest', 'earliest', etc. Try your best to find the answer that best fits the task.
+5) When using Select, first analyze the available options, and choose the one that best matches the task requirements.
 
 Your reply should strictly follow the format:
 Thought: {Your brief thoughts (briefly summarize the info that will help ANSWER)}

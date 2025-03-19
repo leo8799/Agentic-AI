@@ -13,6 +13,9 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 
 from prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_TEXT_ONLY
+from google import genai
+from google.genai import types
+from google.genai.chats import Chat
 from openai import OpenAI
 from utils import get_web_element_rect, encode_image, extract_information, print_message,\
     get_webarena_accessibility_tree, get_pdf_retrieval_ans_from_assistant, clip_message_and_obs, clip_message_and_obs_text_only
@@ -26,7 +29,7 @@ def setup_logger(folder_path):
         logger.removeHandler(handler)
         handler.close()
 
-    handler = logging.FileHandler(log_file_path)
+    handler = logging.FileHandler(log_file_path, encoding='utf-8')
     formatter = logging.Formatter('%(levelname)s - %(message)s')
     handler.setFormatter(formatter)
     logger.addHandler(handler)
@@ -52,42 +55,39 @@ def driver_config(args):
             "plugins.always_open_pdf_externally": True
         }
     )
+    options.add_argument("disable-blink-features=AutomationControlled")
     return options
 
 
 def format_msg(it, init_msg, pdf_obs, warn_obs, web_img_b64, web_text):
+    # 修改dict格式，從content改爲parts
     if it == 1:
         init_msg += f"I've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"
+        
         init_msg_format = {
             'role': 'user',
-            'content': [
-                {'type': 'text', 'text': init_msg},
+            'parts': [
+                {'text': init_msg},
             ]
         }
-        init_msg_format['content'].append({"type": "image_url",
-                                           "image_url": {"url": f"data:image/png;base64,{web_img_b64}"}})
+        
+        init_msg_format['parts'].append({"inline_data": {"mime_type": "image/png", "data": f"{web_img_b64}"}})
         return init_msg_format
     else:
         if not pdf_obs:
             curr_msg = {
                 'role': 'user',
-                'content': [
-                    {'type': 'text', 'text': f"Observation:{warn_obs} please analyze the attached screenshot and give the Thought and Action. I've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"},
-                    {
-                        'type': 'image_url',
-                        'image_url': {"url": f"data:image/png;base64,{web_img_b64}"}
-                    }
+                'parts': [
+                    {'text': f"Observation:{warn_obs} please analyze the attached screenshot and give the Thought and Action. I've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"},
+                    {'inline_data': {"mime_type": "image/png", "data": "{}".format(web_img_b64)}}
                 ]
             }
         else:
             curr_msg = {
                 'role': 'user',
-                'content': [
-                    {'type': 'text', 'text': f"Observation: {pdf_obs} Please analyze the response given by Assistant, then consider whether to continue iterating or not. The screenshot of the current page is also attached, give the Thought and Action. I've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"},
-                    {
-                        'type': 'image_url',
-                        'image_url': {"url": f"data:image/png;base64,{web_img_b64}"}
-                    }
+                'parts': [
+                    {'text': f"Observation: {pdf_obs} Please analyze the response given by Assistant, then consider whether to continue iterating or not. The screenshot of the current page is also attached, give the Thought and Action. I've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"},
+                    {'inline_data': {"mime_type": "image/png", "data": "{}".format(web_img_b64)}}
                 ]
             }
         return curr_msg
@@ -97,22 +97,58 @@ def format_msg_text_only(it, init_msg, pdf_obs, warn_obs, ac_tree):
     if it == 1:
         init_msg_format = {
             'role': 'user',
-            'content': init_msg + '\n' + ac_tree
+            'parts': init_msg + '\n' + ac_tree
         }
         return init_msg_format
     else:
         if not pdf_obs:
             curr_msg = {
                 'role': 'user',
-                'content': f"Observation:{warn_obs} please analyze the accessibility tree and give the Thought and Action.\n{ac_tree}"
+                'parts': f"Observation:{warn_obs} please analyze the accessibility tree and give the Thought and Action.\n{ac_tree}"
             }
         else:
             curr_msg = {
                 'role': 'user',
-                'content': f"Observation: {pdf_obs} Please analyze the response given by Assistant, then consider whether to continue iterating or not. The accessibility tree of the current page is also given, give the Thought and Action.\n{ac_tree}"
+                'parts': f"Observation: {pdf_obs} Please analyze the response given by Assistant, then consider whether to continue iterating or not. The accessibility tree of the current page is also given, give the Thought and Action.\n{ac_tree}"
             }
         return curr_msg
 
+def call_gemini_api(args, chat: Chat, message):
+    retry_times = 0
+    while True:
+        try:
+            if not args.text_only:
+                logging.info('Calling gemini API...')
+                google_response = chat.send_message(message)
+            else:
+                logging.info('Calling gemini API...')
+                google_response = chat.send_message(message)
+                
+            prompt_tokens = getattr(google_response.usage_metadata, "prompt_token_count", 0)
+            completion_tokens = getattr(google_response.usage_metadata, "candidates_token_count", 0)
+            
+            logging.info("Prompt Tokens: {}; Completion Tokens: {}".format(prompt_tokens, completion_tokens))
+            gemini_call_error = False
+            return prompt_tokens, completion_tokens, gemini_call_error, google_response
+        except Exception as e:
+            logging.info("Error occurred, retrying. Error type: {}".format(type(e).__name__))
+            
+            if type(e).__name__ == 'GoogleAPICallError' or type(e).__name__ == "RetryError":
+                logging.warning(f'Google API Error occurred, retrying... Error type: {type(e).__name__}')
+                time.sleep(10)  # 等待 10 秒後重試
+            elif type(e).__name__ == 'InvalidArgument':
+                logging.error(f'Invalid request to Gemini API: {str(e)}')
+                return None, None, True, None  # 返回錯誤狀態
+            else:
+                logging.error(f'Unexpected error: {type(e).__name__}: {str(e)}')
+                logging.info(message)
+                return None, None, True, None  # 返回錯誤狀態
+        
+        retry_times += 1
+        if retry_times == 10:
+            logging.error('Retrying too many times')
+            return None, None, True, None
+                
 
 def call_gpt4v_api(args, openai_client, messages):
     retry_times = 0
@@ -168,7 +204,7 @@ def exec_action_click(info, web_ele, driver_task):
 
 def exec_action_type(info, web_ele, driver_task):
     warn_obs = ""
-    type_content = info['content']
+    type_content = info['parts']
 
     ele_tag_name = web_ele.tag_name.lower()
     ele_type = web_ele.get_attribute("type")
@@ -208,7 +244,7 @@ def exec_action_type(info, web_ele, driver_task):
 
 def exec_action_scroll(info, web_eles, driver_task, args, obs_info):
     scroll_ele_number = info['number']
-    scroll_content = info['content']
+    scroll_content = info['parts']
     if scroll_ele_number == "WINDOW":
         if scroll_content == 'down':
             driver_task.execute_script(f"window.scrollBy(0, {args.window_height*2//3});")
@@ -229,6 +265,57 @@ def exec_action_scroll(info, web_eles, driver_task, args, obs_info):
         else:
             actions.key_down(Keys.ALT).send_keys(Keys.ARROW_UP).key_up(Keys.ALT).perform()
     time.sleep(3)
+    
+def exec_action_select(info, web_ele, driver_task):
+    """
+    選擇 <select> 元素中的某個 <option>。
+    
+    參數：
+    - info: 包含選擇內容的字典，例如 {'parts': '選項 B'} 或 {'parts': 'value2'}
+    - web_ele: Selenium 的 WebElement 對象，對應 <select> 標籤
+    - driver_task: Selenium WebDriver 物件
+    """
+    warn_obs = ""
+    select_value = info['parts']
+    
+    # 確保 web_ele 是 <select> 元素
+    ele_tag_name = web_ele.tag_name.lower()
+    if ele_tag_name != "select":
+        warn_obs = f"note: The web element you're trying to select may not be a dropdown, and its tag name is <{ele_tag_name}>."
+        return warn_obs
+
+    try:
+        # 方式 1：使用 Select 類來選擇 option
+        from selenium.webdriver.support.ui import Select
+        select_element = Select(web_ele)
+
+        # 優先匹配 option 的 value，若找不到則匹配 text
+        found = False
+        for option in select_element.options:
+            if option.get_attribute("value") == select_value:
+                select_element.select_by_value(select_value)
+                found = True
+                break
+            elif option.text.strip() == select_value:
+                select_element.select_by_visible_text(select_value)
+                found = True
+                break
+
+        if not found:
+            warn_obs = f"note: Could not find an <option> with value or text '{select_value}'."
+
+    except Exception as e:
+        warn_obs = f"error: Failed to select option due to {str(e)}."
+
+    # 觸發 change 事件，確保網頁能夠正確響應
+    try:
+        driver_task.execute_script("arguments[0].dispatchEvent(new Event('change', { bubbles: true }));", web_ele)
+    except:
+        pass
+
+    time.sleep(3)
+    return warn_obs
+
 
 
 def main():
@@ -236,7 +323,7 @@ def main():
     parser.add_argument('--test_file', type=str, default='data/test.json')
     parser.add_argument('--max_iter', type=int, default=5)
     parser.add_argument("--api_key", default="key", type=str, help="YOUR_OPENAI_API_KEY")
-    parser.add_argument("--api_model", default="gpt-4-vision-preview", type=str, help="api model name")
+    parser.add_argument("--api_model", default="gemini-2.0-pro-exp-02-05", type=str, help="api model name")
     parser.add_argument("--output_dir", type=str, default='results')
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--max_attached_imgs", type=int, default=1)
@@ -247,14 +334,16 @@ def main():
     parser.add_argument("--headless", action='store_true', help='The window of selenium')
     parser.add_argument("--save_accessibility_tree", action='store_true')
     parser.add_argument("--force_device_scale", action='store_true')
-    parser.add_argument("--window_width", type=int, default=1024)
-    parser.add_argument("--window_height", type=int, default=768)  # for headless mode, there is no address bar
+    parser.add_argument("--window_width", type=int, default=1920)
+    parser.add_argument("--window_height", type=int, default=1068)  # for headless mode, there is no address bar
     parser.add_argument("--fix_box_color", action='store_true')
 
     args = parser.parse_args()
 
     # OpenAI client
-    client = OpenAI(api_key=args.api_key)
+    # client = OpenAI(api_key=args.api_key)
+    client = genai.Client(api_key=args.api_key)
+    chat = client.chats.create(model=args.api_model, config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, max_output_tokens=1000, seed=args.seed))
 
     options = driver_config(args)
 
@@ -284,10 +373,18 @@ def main():
         driver_task.set_window_size(args.window_width, args.window_height)  # larger height may contain more web information
         driver_task.get(task['web'])
         try:
+            '''
+            可能的用途
+            激活頁面：某些網頁需要使用者點擊頁面後才能輸入資料或進行其他互動，如啟用鍵盤輸入。
+            關閉彈窗：某些網站會在載入時顯示彈窗，點擊空白處可能會自動關閉它。
+            觸發 JavaScript 事件：有些網站的 JavaScript 可能要求使用者進行點擊後才會載入完整內容。
+            '''
+            
             driver_task.find_element(By.TAG_NAME, 'body').click()
         except:
             pass
         # sometimes enter SPACE, the page will sroll down
+        # 在網頁上，按下空白鍵通常會讓頁面向下滾動，這行代碼的作用就是 阻止空白鍵滾動頁面，但不影響在輸入框內輸入空格。
         driver_task.execute_script("""window.onkeydown = function(e) {if(e.keyCode == 32 && e.target.type != 'text' && e.target.type != 'textarea') {e.preventDefault();}};""")
         time.sleep(5)
 
@@ -304,10 +401,12 @@ def main():
         warn_obs = ""  # Type warning
         pattern = r'Thought:|Action:|Observation:'
 
-        messages = [{'role': 'system', 'content': SYSTEM_PROMPT}]
+        messages = [{'role': 'system', 'parts': SYSTEM_PROMPT}]
+        # message = {{'role': 'system', 'parts': SYSTEM_PROMPT}}
         obs_prompt = "Observation: please analyze the attached screenshot and give the Thought and Action. "
         if args.text_only:
-            messages = [{'role': 'system', 'content': SYSTEM_PROMPT_TEXT_ONLY}]
+            messages = [{'role': 'system', 'parts': SYSTEM_PROMPT_TEXT_ONLY}]
+            # message = {'role': 'system', 'parts': SYSTEM_PROMPT}
             obs_prompt = "Observation: please analyze the accessibility tree and give the Thought and Action."
 
         init_msg = f"""Now given a task: {task['ques']}  Please interact with https://www.example.com and get the answer. \n"""
@@ -324,7 +423,11 @@ def main():
             if not fail_obs:
                 try:
                     if not args.text_only:
+                        # 獲取element區域
                         rects, web_eles, web_eles_text = get_web_element_rect(driver_task, fix_color=args.fix_box_color)
+                        # print("rects:", rects)
+                        # print("web_eles:", web_eles)
+                        # print("web_eles_text:", web_eles_text)
                     else:
                         accessibility_tree_path = os.path.join(task_dir, 'accessibility_tree{}'.format(it))
                         ac_tree, obs_info = get_webarena_accessibility_tree(driver_task, accessibility_tree_path)
@@ -353,12 +456,14 @@ def main():
                     curr_msg = format_msg(it, init_msg, pdf_obs, warn_obs, b64_img, web_eles_text)
                 else:
                     curr_msg = format_msg_text_only(it, init_msg, pdf_obs, warn_obs, ac_tree)
+                message = curr_msg
                 messages.append(curr_msg)
             else:
                 curr_msg = {
                     'role': 'user',
-                    'content': fail_obs
+                    'parts': fail_obs
                 }
+                message = curr_msg
                 messages.append(curr_msg)
 
             # Clip messages, too many attached images may cause confusion
@@ -368,17 +473,18 @@ def main():
                 messages = clip_message_and_obs_text_only(messages, args.max_attached_imgs)
 
             # Call GPT-4v API
-            prompt_tokens, completion_tokens, gpt_call_error, openai_response = call_gpt4v_api(args, client, messages)
+            # prompt_tokens, completion_tokens, gpt_call_error, openai_response = call_gpt4v_api(args, client, messages)
+            prompt_tokens, completion_tokens, gemini_call_error, google_response = call_gemini_api(args, chat, message)
 
-            if gpt_call_error:
+            if gemini_call_error:
                 break
             else:
                 accumulate_prompt_token += prompt_tokens
                 accumulate_completion_token += completion_tokens
                 logging.info(f'Accumulate Prompt Tokens: {accumulate_prompt_token}; Accumulate Completion Tokens: {accumulate_completion_token}')
                 logging.info('API call complete...')
-            gpt_4v_res = openai_response.choices[0].message.content
-            messages.append({'role': 'assistant', 'content': gpt_4v_res})
+            gemini_res = google_response.candidates[0].content.parts[0].text
+            messages.append({'role': 'assistant', 'parts': gemini_res})
 
 
             # remove the rects on the website
@@ -392,14 +498,14 @@ def main():
 
             # extract action info
             try:
-                assert 'Thought:' in gpt_4v_res and 'Action:' in gpt_4v_res
+                assert 'Thought:' in gemini_res and 'Action:' in gemini_res
             except AssertionError as e:
                 logging.error(e)
                 fail_obs = "Format ERROR: Both 'Thought' and 'Action' should be included in your reply."
                 continue
 
             # bot_thought = re.split(pattern, gpt_4v_res)[1].strip()
-            chosen_action = re.split(pattern, gpt_4v_res)[2].strip()
+            chosen_action = re.split(pattern, gemini_res)[2].strip()
             # print(chosen_action)
             action_key, info = extract_information(chosen_action)
 
@@ -463,6 +569,19 @@ def main():
                     if 'wolfram' in task['web']:
                         time.sleep(5)
 
+                elif action_key == "select":
+                    if not args.text_only:
+                        select_ele_number = int(info['number'])
+                        web_ele = web_eles[select_ele_number]
+                    else:
+                        type_ele_number = info['number']
+                        element_box = obs_info[type_ele_number]['union_bound']
+                        element_box_center = (element_box[0] + element_box[2] // 2,
+                                              element_box[1] + element_box[3] // 2)
+                        web_ele = driver_task.execute_script("return document.elementFromPoint(arguments[0], arguments[1]);", element_box_center[0], element_box_center[1])
+
+                    warn_obs = exec_action_select(info, web_ele, driver_task)
+
                 elif action_key == 'scroll':
                     if not args.text_only:
                         exec_action_scroll(info, web_eles, driver_task, args, None)
@@ -478,7 +597,7 @@ def main():
                     time.sleep(2)
 
                 elif action_key == 'answer':
-                    logging.info(info['content'])
+                    logging.info(info['parts'])
                     logging.info('finish!!')
                     break
 
