@@ -12,7 +12,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 
-from prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_TEXT_ONLY
+from prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_TEXT_ONLY, SYSTEM_PREVIOUS_STEP, ERROR_GROUNDING_AGENT_PROMPT
 from google import genai
 from google.genai import types
 from google.genai.chats import Chat
@@ -58,10 +58,10 @@ def driver_config(args):
     return options
 
 
-def format_msg(it, init_msg, pdf_obs, warn_obs, web_img_b64, web_text):
+def format_msg(it, init_msg, pdf_obs, warn_obs, web_img_b64, web_text, prev_step_action=""):
     # 修改dict格式，從content改爲parts
     if it == 1:
-        init_msg += f"I've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"
+        init_msg += f"{prev_step_action}\nI've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"
         
         init_msg_format = {
             'role': 'user',
@@ -77,7 +77,7 @@ def format_msg(it, init_msg, pdf_obs, warn_obs, web_img_b64, web_text):
             curr_msg = {
                 'role': 'user',
                 'parts': [
-                    {'text': f"Observation:{warn_obs} please analyze the attached screenshot and give the Thought and Action. I've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"},
+                    {'text': f"{prev_step_action}\nObservation:{warn_obs} please analyze the attached screenshot and give the Thought and Action. I've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"},
                     {'inline_data': {"mime_type": "image/png", "data": "{}".format(web_img_b64)}}
                 ]
             }
@@ -85,14 +85,14 @@ def format_msg(it, init_msg, pdf_obs, warn_obs, web_img_b64, web_text):
             curr_msg = {
                 'role': 'user',
                 'parts': [
-                    {'text': f"Observation: {pdf_obs} Please analyze the response given by Assistant, then consider whether to continue iterating or not. The screenshot of the current page is also attached, give the Thought and Action. I've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"},
+                    {'text': f"{prev_step_action}\nObservation: {pdf_obs} Please analyze the response given by Assistant, then consider whether to continue iterating or not. The screenshot of the current page is also attached, give the Thought and Action. I've provided the tag name of each element and the text it contains (if text exists). Note that <textarea> or <input> may be textbox, but not exactly. Please focus more on the screenshot and then refer to the textual information.\n{web_text}"},
                     {'inline_data': {"mime_type": "image/png", "data": "{}".format(web_img_b64)}}
                 ]
             }
         return curr_msg
 
 
-def format_msg_text_only(it, init_msg, pdf_obs, warn_obs, ac_tree):
+def format_msg_text_only(it, init_msg, pdf_obs, warn_obs, ac_tree, prev_step_action=""):
     if it == 1:
         init_msg_format = {
             'role': 'user',
@@ -103,28 +103,52 @@ def format_msg_text_only(it, init_msg, pdf_obs, warn_obs, ac_tree):
         if not pdf_obs:
             curr_msg = {
                 'role': 'user',
-                'parts': f"Observation:{warn_obs} please analyze the accessibility tree and give the Thought and Action.\n{ac_tree}"
+                'parts': f"{prev_step_action}\nObservation:{warn_obs} please analyze the accessibility tree and give the Thought and Action.\n{ac_tree}"
             }
         else:
             curr_msg = {
                 'role': 'user',
-                'parts': f"Observation: {pdf_obs} Please analyze the response given by Assistant, then consider whether to continue iterating or not. The accessibility tree of the current page is also given, give the Thought and Action.\n{ac_tree}"
+                'parts': f"{prev_step_action}\nObservation: {pdf_obs} Please analyze the response given by Assistant, then consider whether to continue iterating or not. The accessibility tree of the current page is also given, give the Thought and Action.\n{ac_tree}"
             }
         return curr_msg
 
-def call_gemini_api(args, chat: Chat, message):
+def call_gemini_api(args, gemini_client: genai.Client, messages, system_instruction):
     retry_times = 0
     while True:
         try:
             if not args.text_only:
                 logging.info('Calling gemini API...')
-                google_response = chat.send_message(message)
+                google_response = gemini_client.models.generate_content(
+                    model=args.api_model,
+                    contents=messages,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        max_output_tokens=1000,
+                        temperature=args.temperature,
+                        seed=args.seed
+                    )
+                )
             else:
                 logging.info('Calling gemini API...')
-                google_response = chat.send_message(message)
+                google_response = gemini_client.models.generate_content(
+                    model=args.api_model,
+                    contents=messages,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        max_output_tokens=1000,
+                        temperature=args.temperature,
+                        seed=args.seed
+                    )
+                )
+            if not google_response.candidates:
+                print("⚠️ Gemini 回傳為空！可能觸發了安全限制、格式錯誤，或 prompt 不清楚。")
+                print(messages[-1]["parts"][0]["text"])
+                print(google_response)
+                # 可以儲存該 prompt 做進一步分析
+
                 
-            prompt_tokens = getattr(google_response.usage_metadata, "prompt_token_count", 0)
-            completion_tokens = getattr(google_response.usage_metadata, "candidates_token_count", 0)
+            prompt_tokens = getattr(google_response.usage_metadata, "prompt_token_count", 0) or 0
+            completion_tokens = getattr(google_response.usage_metadata, "candidates_token_count", 0) or 0
             
             logging.info("Prompt Tokens: {}; Completion Tokens: {}".format(prompt_tokens, completion_tokens))
             gemini_call_error = False
@@ -140,7 +164,13 @@ def call_gemini_api(args, chat: Chat, message):
                 return None, None, True, None  # 返回錯誤狀態
             else:
                 logging.error(f'Unexpected error: {type(e).__name__}: {str(e)}')
-                logging.info(message)
+                logging.info(messages[-1])
+                for idx, m in enumerate(messages):
+                    parts = m.get("parts")
+                    if not isinstance(parts, list):
+                        print(f"❌ Message[{idx}] has invalid parts type: {type(parts)}")
+                        print("Message content:", m)
+
                 return None, None, True, None  # 返回錯誤狀態
         
         retry_times += 1
@@ -321,8 +351,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--test_file', type=str, default='data/test.json')
     parser.add_argument('--max_iter', type=int, default=5)
+    parser.add_argument('--trajectory', action='store_true')
+    parser.add_argument("--error_max_reflection_iter", type=int, default=1, help='Number of reflection restarts allowed when exceeding max_iter')
     parser.add_argument("--api_key", default="key", type=str, help="YOUR_OPENAI_API_KEY")
-    parser.add_argument("--api_model", default="gemini-2.0-pro-exp-02-05", type=str, help="api model name")
+    parser.add_argument("--api_model", default="gemini-2.5-pro-preview-03-25", type=str, help="api model name")
     parser.add_argument("--output_dir", type=str, default='results')
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--max_attached_imgs", type=int, default=1)
@@ -336,13 +368,15 @@ def main():
     parser.add_argument("--window_width", type=int, default=1920)
     parser.add_argument("--window_height", type=int, default=1068)  # for headless mode, there is no address bar
     parser.add_argument("--fix_box_color", action='store_true')
+    parser.add_argument("--start_maximized", action='store_true')
 
     args = parser.parse_args()
 
     # OpenAI client
     # client = OpenAI(api_key=args.api_key)
     client = genai.Client(api_key=args.api_key)
-    chat = client.chats.create(model=args.api_model, config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, max_output_tokens=1000, seed=args.seed))
+    # 多輪對話模式
+    # chat = client.chats.create(model=args.api_model, config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, max_output_tokens=1000, seed=args.seed))
 
     options = driver_config(args)
 
@@ -366,10 +400,14 @@ def main():
         logging.info(f'########## TASK{task["id"]} ##########')
 
         driver_task = webdriver.Chrome(options=options)
-
+        if args.start_maximized: driver_task.maximize_window()
+        
         # About window size, 765 tokens
         # You can resize to height = 512 by yourself (255 tokens, Maybe bad performance)
-        driver_task.set_window_size(args.window_width, args.window_height)  # larger height may contain more web information
+        else: driver_task.set_window_size(args.window_width, args.window_height)
+
+        
+          # larger height may contain more web information
         driver_task.get(task['web'])
         try:
             '''
@@ -398,13 +436,17 @@ def main():
         fail_obs = ""  # When error execute the action
         pdf_obs = ""  # When download PDF file
         warn_obs = ""  # Type warning
-        pattern = r'Thought:|Action:|Observation:'
+        
+        # 爲了多智能體之間的協作，添加了Errors、Explanation這兩個pattern
+        pattern = r'Thought:|Action:|Observation:|Errors:|Explanation:'
 
-        messages = [{'role': 'system', 'parts': SYSTEM_PROMPT}]
+        # messages = [{'role': 'system', 'parts': SYSTEM_PROMPT}]
+        messages = []
         # message = {{'role': 'system', 'parts': SYSTEM_PROMPT}}
         obs_prompt = "Observation: please analyze the attached screenshot and give the Thought and Action. "
         if args.text_only:
-            messages = [{'role': 'system', 'parts': SYSTEM_PROMPT_TEXT_ONLY}]
+            messages = []
+            # messages = [{'role': 'system', 'parts': SYSTEM_PROMPT_TEXT_ONLY}]
             # message = {'role': 'system', 'parts': SYSTEM_PROMPT}
             obs_prompt = "Observation: please analyze the accessibility tree and give the Thought and Action."
 
@@ -415,6 +457,20 @@ def main():
         it = 0
         accumulate_prompt_token = 0
         accumulate_completion_token = 0
+        
+        """=========================================初始化Error Grounding Agent的各個參數============================================="""
+        activate_EGA = True
+        error_exist = False
+        EGA_explanation = ""
+        bot_thought = ""
+        
+        # Reflection: Trajectory
+        current_history = ""
+        
+        print(f"Trajectory: {args.trajectory}")
+        print(f"EGA: {activate_EGA}")
+        """=========================================初始化Error Grounding Agent的各個參數============================================="""
+        
 
         while it < args.max_iter:
             logging.info(f'Iter: {it}')
@@ -442,28 +498,72 @@ def main():
                 img_path = os.path.join(task_dir, 'screenshot{}.png'.format(it))
                 driver_task.save_screenshot(img_path)
 
+                # encode image
+                b64_img = encode_image(img_path)
+                
+                """=======================================Error Grounding Agent========================================================"""
+                if it > 1 and activate_EGA:
+                    # 將EGA的prompt和screenshot封裝進msg
+                    # EGA_messages = [{'role': 'system', 'parts': ERROR_GROUNDING_AGENT_PROMPT}]
+                    EGA_messages = []
+
+                    # EGA_img = encode_image(img_path)
+                    EGA_user_message = {
+                        'role': 'user',
+                        'parts': [
+                            {'text': 'Thought:'+bot_thought+'\nScreenshot:'},
+                            {'inline_data': {"mime_type": "image/png", "data": "{}".format(b64_img)}}
+                        ]
+                    }
+                    EGA_message = EGA_user_message
+                    EGA_messages.append(EGA_user_message)
+                    prompt_tokens, completion_tokens, gemini_call_error, google_response = call_gemini_api(args, client, EGA_messages, ERROR_GROUNDING_AGENT_PROMPT)
+                    if gemini_call_error:
+                        break
+                    else:
+                        accumulate_prompt_token += prompt_tokens
+                        accumulate_completion_token += completion_tokens
+                        logging.info(f'Accumulate Prompt Tokens: {accumulate_prompt_token}; Accumulate Completion Tokens: {accumulate_completion_token}')
+                        logging.info('API call complete...')
+                    EGA_res = google_response.candidates[0].content.parts[0].text
+                    if re.split(pattern, EGA_res)[1].strip() == 'Yes':
+                        error_exist = True
+                    elif re.split(pattern, EGA_res)[1].strip() == 'No':
+                        error_exist = False
+                    else:
+                        error_exist = False
+                        print("error_exist got unexpected result:", EGA_res)
+                    if error_exist == True:
+                        EGA_explanation = re.split(pattern, EGA_res)[2].strip()
+                
+                """==================================================================================================================="""
+                    
                 # accessibility tree
                 if (not args.text_only) and args.save_accessibility_tree:
                     accessibility_tree_path = os.path.join(task_dir, 'accessibility_tree{}'.format(it))
                     get_webarena_accessibility_tree(driver_task, accessibility_tree_path)
 
-                # encode image
-                b64_img = encode_image(img_path)
-
                 # format msg
                 if not args.text_only:
-                    curr_msg = format_msg(it, init_msg, pdf_obs, warn_obs, b64_img, web_eles_text)
+                    curr_msg = format_msg(it, init_msg, pdf_obs, warn_obs, b64_img, web_eles_text, SYSTEM_PREVIOUS_STEP + current_history)
+                    if error_exist == True:
+                        curr_msg['parts'][0]['text'] += ("\nAdditional Information: Looks like your previous thought has some problem in operation. Here is the message from Error Grounding Agent\n"+EGA_explanation)
                 else:
-                    curr_msg = format_msg_text_only(it, init_msg, pdf_obs, warn_obs, ac_tree)
+                    curr_msg = format_msg_text_only(it, init_msg, pdf_obs, warn_obs, ac_tree, SYSTEM_PREVIOUS_STEP + current_history)
+                    if error_exist == True:
+                        curr_msg['parts']+=("\nAdditional Information: Looks like your previous thought has some problem in operation. Here is the message from Error Grounding Agent\n"+EGA_explanation)
                 message = curr_msg
                 messages.append(curr_msg)
             else:
                 curr_msg = {
                     'role': 'user',
-                    'parts': fail_obs
+                    'parts': [
+                        {'text': fail_obs}
+                    ]
                 }
                 message = curr_msg
                 messages.append(curr_msg)
+                
 
             # Clip messages, too many attached images may cause confusion
             if not args.text_only:
@@ -473,7 +573,10 @@ def main():
 
             # Call GPT-4v API
             # prompt_tokens, completion_tokens, gpt_call_error, openai_response = call_gpt4v_api(args, client, messages)
-            prompt_tokens, completion_tokens, gemini_call_error, google_response = call_gemini_api(args, chat, message)
+            if not args.text_only:
+                prompt_tokens, completion_tokens, gemini_call_error, google_response = call_gemini_api(args, client, messages, SYSTEM_PROMPT)
+            else:
+                prompt_tokens, completion_tokens, gemini_call_error, google_response = call_gemini_api(args, client, messages, SYSTEM_PROMPT_TEXT_ONLY)
 
             if gemini_call_error:
                 break
@@ -483,7 +586,12 @@ def main():
                 logging.info(f'Accumulate Prompt Tokens: {accumulate_prompt_token}; Accumulate Completion Tokens: {accumulate_completion_token}')
                 logging.info('API call complete...')
             gemini_res = google_response.candidates[0].content.parts[0].text
-            messages.append({'role': 'assistant', 'parts': gemini_res})
+            messages.append({
+                'role': 'model',
+                'parts': [
+                    {'text': gemini_res}
+                ]
+            })
 
 
             # remove the rects on the website
@@ -503,8 +611,21 @@ def main():
                 fail_obs = "Format ERROR: Both 'Thought' and 'Action' should be included in your reply."
                 continue
 
-            # bot_thought = re.split(pattern, gpt_4v_res)[1].strip()
+
+            """==========================================記錄此次迭代的錯誤信息和推理路徑==========================================="""
+            bot_thought = re.split(pattern, gemini_res)[1].strip()
             chosen_action = re.split(pattern, gemini_res)[2].strip()
+            
+            trajectory_info = f"Thought: {bot_thought}\nAction {chosen_action}"
+            error_info = f"Error: {error_exist}\nExplanation: {EGA_explanation}"
+            
+            if args.trajectory:
+                current_history += trajectory_info
+                if activate_EGA:
+                    current_history += error_info
+                    
+            print(f"Step {it}:\n{error_info}\n{trajectory_info}\n----")
+            """==================================================================================================================="""
             # print(chosen_action)
             action_key, info = extract_information(chosen_action)
 

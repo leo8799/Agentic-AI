@@ -280,7 +280,9 @@ def clip_message_and_obs(msg, max_img_num):
                 msg_pdf = curr_msg['parts'][0]["text"].split("Observation:")[0].strip() + "Observation: A screenshot, a PDF file and some texts. (Omitted in context.)"
                 curr_msg_clip = {
                     'role': curr_msg['role'],
-                    'parts': msg_no_pdf if "You downloaded a PDF file" not in curr_msg['parts'][0]["text"] else msg_pdf
+                    'parts': [
+                        {'text': msg_no_pdf if "You downloaded a PDF file" not in curr_msg['parts'] else msg_pdf}
+                    ]
                 }
                 clipped_msg = [curr_msg_clip] + clipped_msg
     return clipped_msg
@@ -302,7 +304,10 @@ def clip_message_and_obs_text_only(msg, max_tree_num):
                 msg_pdf = curr_msg['parts'].split("Observation:")[0].strip() + "Observation: An accessibility tree and a PDF file. (Omitted in context.)"
                 curr_msg_clip = {
                     'role': curr_msg['role'],
-                    'parts': msg_no_pdf if "You downloaded a PDF file" not in curr_msg['parts'] else msg_pdf
+                    # 'parts': msg_no_pdf if "You downloaded a PDF file" not in curr_msg['parts'] else msg_pdf
+                    'parts': [
+                        {'text': msg_no_pdf if "You downloaded a PDF file" not in curr_msg['parts'] else msg_pdf}
+                    ]
                 }
                 clipped_msg = [curr_msg_clip] + clipped_msg
     return clipped_msg
