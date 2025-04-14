@@ -2,6 +2,8 @@
 
 This repository is based on [WebVoyager](https://arxiv.org/abs/2401.13919), a Large Multimodal Model (LMM) powered web agent capable of completing user instructions end-to-end by interacting with real-world websites. We have modified and extended WebVoyager to enhance its functionality and improve its interaction capabilities.
 
+Github URL: https://github.com/leo8799/Agentic-AI.git
+
 ### **Key Modifications:**
 - **New "Select" Action Support**:  
   - Added a new `select` action in `prompt.py` to enable the agent to interact with dropdown menus.  
@@ -10,7 +12,10 @@ This repository is based on [WebVoyager](https://arxiv.org/abs/2401.13919), a La
 - **API Migration from OpenAI to Gemini**:  
   - Replaced OpenAI’s API with Gemini API for better performance and cost efficiency.  
   - Refactored the entire project to accommodate differences in JSON response format.  
-  - Adjusted key mappings in the response structure (`content` → `parts`).  
+  - Adjusted key mappings in the response structure (`content` → `parts`). 
+- **Self-Reflction:** 
+  - Add a Reflection Agent to evaluate the Agent's Thought and Action.
+  - Record the Main Agent's and Reflection Agent's Trajectory. 
 
 These modifications improve WebVoyager's ability to handle complex web interactions and ensure seamless integration with new API structures.
 
@@ -37,8 +42,7 @@ After setting up the environment, you can start running.
 
 You can run the project with the following command:
 ```shell 
-python run.py --test_file ./data/tasks_test.jsonl --api_key "your_api" --max_iter 15 --max_attached_imgs 3 --temperature 1 --seed 42
-
+python run.py --test_file ./data/tasks_test.jsonl --api_key "your_api" --max_iter 15 --max_attached_imgs 3 --temperature 1 --seed 42 --start_maximized --trajectory --error_max_reflection_iter 3
 ```
 
 ### Parameters
@@ -49,6 +53,9 @@ General:
 - `--api_key`: Your OpenAI API key.
 - `--output_dir`: We should save the trajectory of the web browsing.
 - `--download_dir`: Sometimes Agent downloads PDF files for analysis.
+- `--trajectory`: Stored the trajectory
+- `--error_max_reflection_iter`: Number of reflection restarts allowed when exceeding max_iter
+
 
 Model:
 - `--api_model`: The agent that receives observations and makes decisions. In our experiments, we use `gpt-4-vision-preview`. For text-only setting, models without vision input can be used, such as `gpt-4-1106-preview`.
@@ -63,6 +70,7 @@ Web navigation:
 - `--force_device_scale`: Set device scale factor to 1. If we need accessibility tree, we should use this parameter.
 - `--window_width`: Width, default is 1024.
 - `--window_height`: Height, default is 768. (1024 * 768 image is equal to 765 tokens according to [OpenAI pricing](https://openai.com/pricing).)
+- `--start_maximized`: Maximized the browser's width and height.
 - `--fix_box_color`: We utilize [GPT-4-ACT](https://github.com/ddupont808/GPT-4V-Act), a Javascript tool to extracts the interactive elements based on web element types and then overlays bounding boxes. This option fixes the color of the boxes to black. Otherwise it is random.
 
 ### Develop Your Prompt
