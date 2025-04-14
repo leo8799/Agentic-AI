@@ -123,7 +123,7 @@ def call_gemini_api(args, gemini_client: genai.Client, messages, system_instruct
                     contents=messages,
                     config=types.GenerateContentConfig(
                         system_instruction=system_instruction,
-                        max_output_tokens=1000,
+                        max_output_tokens=10000,
                         temperature=args.temperature,
                         seed=args.seed
                     )
@@ -135,14 +135,15 @@ def call_gemini_api(args, gemini_client: genai.Client, messages, system_instruct
                     contents=messages,
                     config=types.GenerateContentConfig(
                         system_instruction=system_instruction,
-                        max_output_tokens=1000,
+                        max_output_tokens=10000,
                         temperature=args.temperature,
                         seed=args.seed
                     )
                 )
             if not google_response.candidates:
                 print("⚠️ Gemini 回傳為空！可能觸發了安全限制、格式錯誤，或 prompt 不清楚。")
-                print(messages[-1]["parts"][0]["text"])
+                for message in len(messages):
+                    print(message["parts"][0]["text"])
                 print(google_response)
                 # 可以儲存該 prompt 做進一步分析
 
@@ -463,9 +464,11 @@ def main():
         error_exist = False
         EGA_explanation = ""
         bot_thought = ""
+        chosen_action = ""
         
         # Reflection: Trajectory
         current_history = ""
+        EGA_messages = []
         
         print(f"Trajectory: {args.trajectory}")
         print(f"EGA: {activate_EGA}")
@@ -505,13 +508,12 @@ def main():
                 if it > 1 and activate_EGA:
                     # 將EGA的prompt和screenshot封裝進msg
                     # EGA_messages = [{'role': 'system', 'parts': ERROR_GROUNDING_AGENT_PROMPT}]
-                    EGA_messages = []
-
+                    EGA_explanation = ""
                     # EGA_img = encode_image(img_path)
                     EGA_user_message = {
                         'role': 'user',
                         'parts': [
-                            {'text': 'Thought:'+bot_thought+'\nScreenshot:'},
+                            {'text': 'Thought:'+bot_thought+'\nAction:'+chosen_action+'\nScreenshot:'},
                             {'inline_data': {"mime_type": "image/png", "data": "{}".format(b64_img)}}
                         ]
                     }
@@ -568,8 +570,10 @@ def main():
             # Clip messages, too many attached images may cause confusion
             if not args.text_only:
                 messages = clip_message_and_obs(messages, args.max_attached_imgs)
+                EGA_messages = clip_message_and_obs(EGA_messages, args.max_attached_imgs)
             else:
                 messages = clip_message_and_obs_text_only(messages, args.max_attached_imgs)
+                EGA_messages = clip_message_and_obs_text_only(EGA_messages, args.max_attached_imgs)
 
             # Call GPT-4v API
             # prompt_tokens, completion_tokens, gpt_call_error, openai_response = call_gpt4v_api(args, client, messages)
@@ -616,8 +620,8 @@ def main():
             bot_thought = re.split(pattern, gemini_res)[1].strip()
             chosen_action = re.split(pattern, gemini_res)[2].strip()
             
-            trajectory_info = f"Thought: {bot_thought}\nAction {chosen_action}"
-            error_info = f"Error: {error_exist}\nExplanation: {EGA_explanation}"
+            trajectory_info = f"Thought: {bot_thought}\nAction: {chosen_action}\n"
+            error_info = f"Error: {error_exist}\nExplanation: {EGA_explanation}\n"
             
             if args.trajectory:
                 current_history += trajectory_info

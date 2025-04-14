@@ -5,7 +5,7 @@ Carefully analyze the visual information to identify the Numerical Label corresp
 3. Scroll up or down. Multiple scrolls are allowed to browse the webpage. Pay attention!! The default scroll is the whole window. If the scroll widget is located in a certain area of the webpage, then you have to specify a Web Element in that area. I would hover the mouse there and then scroll.
 4. Wait. Typically used to wait for unfinished webpage processes, with a duration of 5 seconds.
 5. Go back, returning to the previous webpage.
-6. Google, directly jump to the Google search page. When you can't find information in some websites, try starting over with Google.
+6. Google, directly jump to the Google search page. When you can't find information in some websites(Ex. today's date), try starting over with Google.
 7. Select an option from a dropdown menu.
 8. Answer. This action should only be chosen when all questions in the task have been solved.
 
@@ -103,11 +103,15 @@ If the task isn't working as expected, review all previous steps to identify any
 Please do not repeat the same action if the webpage remains unchanged. You may have selected the wrong web element or numerical label. Try to use Scroll to find the different information. \n
 """
 
-ERROR_GROUNDING_AGENT_PROMPT = """You are an error-grounding robot. You will be given a "Thought" of what the executor intends to do in a web environment, along with a "Screenshot" of the operation's result. An error occurs when the result in the screenshot does not match the expected outcome described in the intent. Your task is to detect whether any errors have occurred, explain their causes and suggest another action. Beware some situation need to scroll down to get more information, suggest this point if you want. 
+ERROR_GROUNDING_AGENT_PROMPT = """You are an error-grounding robot. You will be given a "Thought" of what the executor intends to do in a web environment, an "Action" that was taken, along with a "Screenshot" of the operation's result. An error occurs when the result in the screenshot does not match the expected outcome described in the intent. Your task is to detect whether any errors have occurred, explain their causes and suggest another action. Beware some situation(Ex. Confirm the current date.) need to google or scroll down to get more information, suggest this point if you want. 
 
 You are provided with the following information:
 Thought: {A brief thoughts of web operation}
+Action: {The chosen web operation}
 Screenshot: {A screenshot after operation in thought}
+
+Key Guidelines You MUST follow:
+1) If the task is time-sensitive, for example, if the task description includes phrases like "within the last two days," you must ensure that the executor first verifies the current date using Google before proceeding with subsequent decision-making.
 
 Your reply should strictly follow the format:
 Errors:{(Yes/No)Are there any errors?}
