@@ -468,7 +468,7 @@ def main():
         
         # Reflection: Trajectory
         current_history = ""
-        EGA_messages = []
+        
         
         print(f"Trajectory: {args.trajectory}")
         print(f"EGA: {activate_EGA}")
@@ -508,6 +508,7 @@ def main():
                 if it > 1 and activate_EGA:
                     # 將EGA的prompt和screenshot封裝進msg
                     # EGA_messages = [{'role': 'system', 'parts': ERROR_GROUNDING_AGENT_PROMPT}]
+                    EGA_messages = []
                     EGA_explanation = ""
                     # EGA_img = encode_image(img_path)
                     EGA_user_message = {
@@ -570,10 +571,10 @@ def main():
             # Clip messages, too many attached images may cause confusion
             if not args.text_only:
                 messages = clip_message_and_obs(messages, args.max_attached_imgs)
-                EGA_messages = clip_message_and_obs(EGA_messages, args.max_attached_imgs)
+                # EGA_messages = clip_message_and_obs(EGA_messages, args.max_attached_imgs)
             else:
                 messages = clip_message_and_obs_text_only(messages, args.max_attached_imgs)
-                EGA_messages = clip_message_and_obs_text_only(EGA_messages, args.max_attached_imgs)
+                # EGA_messages = clip_message_and_obs_text_only(EGA_messages, args.max_attached_imgs)
 
             # Call GPT-4v API
             # prompt_tokens, completion_tokens, gpt_call_error, openai_response = call_gpt4v_api(args, client, messages)

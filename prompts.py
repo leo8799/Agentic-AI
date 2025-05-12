@@ -111,7 +111,7 @@ Action: {The chosen web operation}
 Screenshot: {A screenshot after operation in thought}
 
 Key Guidelines You MUST follow:
-1) If the task is time-sensitive, for example, if the task description includes phrases like "within the last two days," you must ensure that the executor first verifies the current date using Google before proceeding with subsequent decision-making.
+1) If the task is time-sensitive, for example, if the task description includes phrases like "within the last two days," you must ensure that the executor first verifies the current date using Google before proceeding with subsequent decision-making. you can fully trust the date in the google search result.
 
 Your reply should strictly follow the format:
 Errors:{(Yes/No)Are there any errors?}
