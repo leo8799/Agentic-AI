@@ -10,12 +10,27 @@ Github URL: https://github.com/leo8799/Agentic-AI.git
   - Implemented the `exec_action_select` function using Selenium to directly modify selected values in dropdown menus.  
 
 - **API Migration from OpenAI to Gemini**:  
-  - Replaced OpenAI’s API with Gemini API for better performance and cost efficiency.  
+  - Replaced OpenAI's API with Gemini API for better performance and cost efficiency.  
   - Refactored the entire project to accommodate differences in JSON response format.  
   - Adjusted key mappings in the response structure (`content` → `parts`). 
-- **Self-Reflction:** 
+
+- **Self-Reflection:** 
   - Add a Reflection Agent to evaluate the Agent's Thought and Action.
   - Record the Main Agent's and Reflection Agent's Trajectory. 
+
+- **New Text Generation Features**:
+  - Added `generatetext` action to generate literature summaries using RAG.
+  - Implemented automatic PDF processing and storage in vector database.
+
+- **Vector Database Integration**:
+  - Automatic PDF storage in vector database for efficient retrieval.
+  - Support for arXiv PDF processing and indexing.
+  - Enhanced RAG capabilities for text generation and manual creation.
+
+- **Instruction Manual Generation**:
+  - Implemented task-based manual generation using RAG.
+  - Generates structured planning guides for WebVoyager.
+  - Integrates with vector database for relevant information retrieval.
 
 These modifications improve WebVoyager's ability to handle complex web interactions and ensure seamless integration with new API structures.
 
