@@ -8,8 +8,7 @@ import numpy as np
 from PIL import Image
 from utils_webarena import fetch_browser_info, fetch_page_accessibility_tree,\
                     parse_accessibility_tree, clean_accesibility_tree
-
-
+from google.genai import types
 def resize_image(image_path):
     image = Image.open(image_path)
     width, height = image.size
@@ -226,6 +225,7 @@ def extract_information(text):
         "goback": r"^GoBack",
         "google": r"^Google",
         "select": r"Select \[?(\d+)\]?[; ]+\[?(.[^\]]*)\]?",
+        "generatetext": r"GenerateText[; ]+\[?(.[^\]]*)\]?",
         "answer": r"ANSWER[; ]+\[?(.[^\]]*)\]?"
     }
 
@@ -416,3 +416,73 @@ def get_pdf_retrieval_ans_from_assistant(client, pdf_path, task):
     # print(assistant_deletion_status)
     logging.info(assistant_deletion_status)
     return messages_text
+
+
+def get_pdf_retrieval_ans_from_rag(args, client, task, rag_system):
+    """
+    使用 Gemini 嵌入模型和 RAG 系統生成 PDF 摘要
+    
+    Args:
+        args: 命令行參數
+        client: Gemini API 客戶端
+        task: 用戶的查詢任務
+        rag_system: RAG 系統實例
+        
+    Returns:
+        str: 生成的摘要文本
+    """
+    try:
+        logging.info("開始使用 RAG 系統處理 PDF 文件...")
+        
+        # 使用 RAG 系統檢索相關內容
+        search_results = rag_system.search(task, n_results=5)
+        context = rag_system.format_context(search_results)
+        
+        # 構建摘要提示
+        summary_prompt = f"""請基於以下文獻內容，生成一個專業的學術摘要來回答問題：{task}
+
+文獻內容：
+{context}
+
+請生成一個結構化的摘要，包含以下部分：
+1. 研究背景與目的
+2. 主要發現與方法
+3. 關鍵結論
+4. 與問題的相關性分析
+
+請確保摘要：
+- 保持學術性和專業性
+- 突出與問題最相關的內容
+- 使用清晰的邏輯結構
+- 對每套技術都要有詳細的描述
+- 針對每套技術解決的問題都要全面的介紹
+"""
+        
+        # 直接使用 Gemini SDK 生成摘要
+        response = client.models.generate_content(
+            model=args.api_model,
+            contents=[summary_prompt],
+            config=types.GenerateContentConfig(
+                system_instruction="你是一個專業的學術文獻摘要助手，擅長從研究文獻中提取關鍵信息並生成結構化的學術摘要。你的摘要應該準確反映文獻的核心內容，並突出與用戶問題的相關性。",
+                max_output_tokens=10000,
+                temperature=args.temperature,
+                seed=args.seed
+            )
+        )
+        
+        if not response.candidates:
+            logging.error("生成摘要時發生錯誤：Gemini 回傳為空")
+            return "無法生成摘要，請檢查文獻內容或重試。"
+            
+        summary = response.candidates[0].content.parts[0].text
+        
+        # 記錄摘要生成的統計信息
+        prompt_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
+        completion_tokens = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
+        logging.info(f"摘要生成完成 - Prompt Tokens: {prompt_tokens}, Completion Tokens: {completion_tokens}")
+        
+        return summary
+        
+    except Exception as e:
+        logging.error(f"RAG 摘要生成過程中發生錯誤: {str(e)}")
+        return f"處理文獻時發生錯誤：{str(e)}"

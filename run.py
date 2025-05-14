@@ -1,3 +1,4 @@
+import datetime
 import platform
 import argparse
 import time
@@ -16,8 +17,10 @@ from prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_TEXT_ONLY, SYSTEM_PREVIOUS_STEP
 from google import genai
 from google.genai import types
 from google.genai.chats import Chat
+from rag_implementation import GeminiChromaRAG
+from instrustion_manual_generator import InstructionManualGenerator
 from utils import get_web_element_rect, encode_image, extract_information, print_message,\
-    get_webarena_accessibility_tree, get_pdf_retrieval_ans_from_assistant, clip_message_and_obs, clip_message_and_obs_text_only
+    get_webarena_accessibility_tree, get_pdf_retrieval_ans_from_assistant, get_pdf_retrieval_ans_from_rag, clip_message_and_obs, clip_message_and_obs_text_only
 
 
 def setup_logger(folder_path):
@@ -37,6 +40,8 @@ def setup_logger(folder_path):
 
 def driver_config(args):
     options = webdriver.ChromeOptions()
+    
+    download_dir = os.path.abspath(args.download_dir)
 
     if args.save_accessibility_tree:
         args.force_device_scale = True
@@ -50,7 +55,7 @@ def driver_config(args):
         )
     options.add_experimental_option(
         "prefs", {
-            "download.default_directory": args.download_dir,
+            "download.default_directory": download_dir,
             "plugins.always_open_pdf_externally": True
         }
     )
@@ -346,13 +351,47 @@ def exec_action_select(info, web_ele, driver_task):
     time.sleep(3)
     return warn_obs
 
-
+def exec_action_generatetext(args, client, info, rag_system):
+    """
+    使用 RAG 系統生成文本摘要
+    
+    參數：
+    - args: 命令行參數物件，包含模型配置等信息
+    - client: Gemini API 客戶端
+    - info: 包含生成文本所需信息的字典，例如 {'parts': '任務描述文本'}
+    - rag_system: RAG 系統實例，用於檢索和生成摘要
+    
+    返回：
+    - str: 生成的摘要文本或錯誤信息
+    """
+    try:
+        # 從 info 中獲取任務描述
+        task_description = info.get('parts', '')
+        if not task_description:
+            return "錯誤：未提供任務描述"
+            
+        # 使用 RAG 系統生成摘要
+        summary = get_pdf_retrieval_ans_from_rag(
+            args=args,
+            client=client,
+            task=task_description,
+            rag_system=rag_system
+        )
+        
+        return summary
+        
+    except Exception as e:
+        error_msg = f"生成摘要時發生錯誤：{str(e)}"
+        logging.error(error_msg)
+        return error_msg
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--test_file', type=str, default='data/test.json')
     parser.add_argument('--max_iter', type=int, default=5)
     parser.add_argument('--trajectory', action='store_true')
+    parser.add_argument('--rag', action='store_true')
+    parser.add_argument("--EGA", action='store_true')
     parser.add_argument("--error_max_reflection_iter", type=int, default=1, help='Number of reflection restarts allowed when exceeding max_iter')
     parser.add_argument("--api_key", default="key", type=str, help="YOUR_OPENAI_API_KEY")
     parser.add_argument("--api_model", default="gemini-2.5-pro-preview-03-25", type=str, help="api model name")
@@ -379,6 +418,9 @@ def main():
     # 多輪對話模式
     # chat = client.chats.create(model=args.api_model, config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, max_output_tokens=1000, seed=args.seed))
 
+    # 初始化 RAG 系統
+    rag_system = GeminiChromaRAG(api_key=args.api_key)
+    
     options = driver_config(args)
 
     # Save Result file
@@ -391,6 +433,8 @@ def main():
     with open(args.test_file, 'r', encoding='utf-8') as f:
         for line in f:
             tasks.append(json.loads(line))
+            
+    rag_system.add_pdf('data/arXiv.pdf', chunk_size=1000, chunk_overlap=200) 
 
 
     for task_id in range(len(tasks)):
@@ -450,9 +494,29 @@ def main():
             # messages = [{'role': 'system', 'parts': SYSTEM_PROMPT_TEXT_ONLY}]
             # message = {'role': 'system', 'parts': SYSTEM_PROMPT}
             obs_prompt = "Observation: please analyze the accessibility tree and give the Thought and Action."
+        
+           
+        rag_result = rag_system.search(task['ques'], n_results=3)
+        manual = InstructionManualGenerator(api_key=args.api_key, task_goal=task['ques'], results=rag_result, logger=logging).generate_instruction_manual()
+        
+        
 
-        init_msg = f"""Now given a task: {task['ques']}  Please interact with https://www.example.com and get the answer. \n"""
+        logging.info(f"manual:\n {manual}")
+
+        today_date = datetime.date.today().strftime('%Y-%m-%d')
+        init_msg = f"""Today is {today_date}. Now given a task: {task['ques']}  Please interact with https://www.example.com and get the answer. \n"""
         init_msg = init_msg.replace('https://www.example.com', task['web'])
+        init_msg += """Before taking action, carefully analyze the contents in [Manuals and QA pairs] below.
+Determine whether [Manuals and QA pairs] contain relevant procedures, constraints, or guidelines that should be followed for this task.
+If so, follow their guidance accordingly. If not, proceed with a logical and complete approach.\n"""
+
+        init_msg += f"""[Key Guidelines You MUST follow]
+Before taking any action, analyze the provided [Manuals and QA pairs] as a whole to determine if they contain useful procedures, constraints, or guidelines relevant to this task.
+ - If [Manuals and QA pairs] provide comprehensive guidance, strictly follow their instructions in an ordered and structured manner.
+ - If [Manuals and QA pairs] contain partial but useful information, integrate it into your approach while filling in the gaps logically.
+ - If [Manuals and QA pairs] are entirely irrelevant or insufficient, proceed with the best available method while ensuring completeness.\n
+[Manuals and QA pairs]
+{manual}\n"""
         init_msg = init_msg + obs_prompt
 
         it = 0
@@ -460,7 +524,7 @@ def main():
         accumulate_completion_token = 0
         
         """=========================================初始化Error Grounding Agent的各個參數============================================="""
-        activate_EGA = True
+        activate_EGA = args.EGA
         error_exist = False
         EGA_explanation = ""
         bot_thought = ""
@@ -667,10 +731,31 @@ def main():
 
                         current_download_file = [pdf_file for pdf_file in current_files if pdf_file not in download_files and pdf_file.endswith('.pdf')]
                         if current_download_file:
+                            print("processing PDF file...")
                             pdf_file = current_download_file[0]
-                            pdf_obs = get_pdf_retrieval_ans_from_assistant(client, os.path.join(args.download_dir, pdf_file), task['ques'])
+                            
+                            # 添加到向量數據庫
+                            try:
+                                rag_system.add_pdf(os.path.join(args.download_dir, pdf_file))
+                                logging.info(f"Successfully added PDF to vector database: {pdf_file}")
+                                
+                                # 使用 RAG 系統生成摘要
+                                # pdf_obs = get_pdf_retrieval_ans_from_rag(
+                                #     args=args,
+                                #     client=client,
+                                #     task=task['ques'],
+                                #     rag_system=rag_system
+                                # )
+
+                            except Exception as e:
+                                logging.error(f"Error adding PDF to RAG system: {str(e)}")
+                                pdf_obs = f"處理 PDF 文件時發生錯誤：{str(e)}"
+                            
+                            # pdf_obs = get_pdf_retrieval_ans_from_assistant(client, os.path.join(args.download_dir, pdf_file), task['ques'])
                             shutil.copy(os.path.join(args.download_dir, pdf_file), task_dir)
-                            pdf_obs = "You downloaded a PDF file, I ask the Assistant API to answer the task based on the PDF file and get the following response: " + pdf_obs
+                            # pdf_obs = "You downloaded a PDF file, I ask the Assistant API to answer the task based on the PDF file and get the following response: " + pdf_obs
+                            
+                            
                         download_files = current_files
 
                     if ele_tag_name == 'button' and ele_type == 'submit':
@@ -720,6 +805,33 @@ def main():
                 elif action_key == 'google':
                     driver_task.get('https://www.google.com/')
                     time.sleep(2)
+                    
+                elif action_key == 'generatetext':
+                    logging.info('call generatetext Agent')
+                    pdf_obs = exec_action_generatetext(args, client, info, rag_system)
+                    
+                    # 將摘要保存為 markdown 文件
+                    try:
+                        # 生成文件名（使用時間戳避免重複）
+                        timestamp = time.strftime("%Y%m%d_%H_%M_%S", time.localtime())
+                        md_filename = f"summary_{timestamp}.md"
+                        md_path = os.path.join(task_dir, md_filename)
+                        
+                        # 寫入文件
+                        with open(md_path, 'w', encoding='utf-8') as f:
+                            f.write("# 文獻摘要\n\n")
+                            f.write(f"## 任務描述\n{info['parts']}\n\n")
+                            f.write("## 生成摘要\n")
+                            f.write(pdf_obs)
+                            
+                        logging.info(f"摘要已保存至：{md_path}")
+                        
+                    except Exception as e:
+                        logging.error(f"保存摘要文件時發生錯誤：{str(e)}")
+                    
+                    pdf_obs = "You use the RAG, I ask the Generatetext Agent to answer the task based on the PDF file and get the following response: " + pdf_obs
+                    logging.info('generatetext Agent finish')
+                    break
 
                 elif action_key == 'answer':
                     logging.info(info['parts'])

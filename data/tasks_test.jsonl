@@ -1,1 +1,2 @@
-{"web_name": "ArXiv", "id": "ArXiv--1", "ques": "Search for the latest research papers on quantum computing submitted to ArXiv within the last two days.", "web": "https://arxiv.org/"}
+{"web_name": "Arxiv", "id": "arxiv--1", "ques": "直接調用generatetext生成object detect的文獻綜述", "web": "https://arxiv.org/"}
+{"web_name": "Arxiv", "id": "arxiv--2", "ques": "首先使用進階搜索功能，選擇computer science領域，檢索幾篇object detect的survey論文，根據相關性進行排序，下載論文pdf檔最後將其pdf存入向量數據庫，最後使用rag生成object detect的文獻綜述", "web": "https://arxiv.org/"}
