@@ -18,9 +18,10 @@ from google import genai
 from google.genai import types
 from google.genai.chats import Chat
 from rag_implementation import GeminiChromaRAG
-from instrustion_manual_generator import InstructionManualGenerator
 from utils import get_web_element_rect, encode_image, extract_information, print_message,\
     get_webarena_accessibility_tree, get_pdf_retrieval_ans_from_assistant, get_pdf_retrieval_ans_from_rag, clip_message_and_obs, clip_message_and_obs_text_only
+
+from instrustion_manual_generator import InstructionManualGenerator
 
 
 def setup_logger(folder_path):
@@ -497,9 +498,23 @@ def main():
         
            
         rag_result = rag_system.search(task['ques'], n_results=3)
-        manual = InstructionManualGenerator(api_key=args.api_key, task_goal=task['ques'], results=rag_result, logger=logging).generate_instruction_manual()
         
+        # 使用 InstructionManualGenerator 處理 RAG 結果
+        manual_generator = InstructionManualGenerator(
+            api_key=args.api_key,
+            task_goal=task['ques'],
+            results=rag_result,
+            logger=logging.getLogger(__name__)
+        )
         
+        try:
+            manual = manual_generator.generate_instruction_manual()
+            logging.info(f"Generated instruction manual:\n{manual}")
+        except Exception as e:
+            logging.warning(f"Failed to generate instruction manual: {e}")
+            # 如果生成失敗，回退到原始 RAG 結果
+            manual = str(rag_result)
+            logging.info(f"Using fallback RAG result:\n{manual}")
 
         logging.info(f"manual:\n {manual}")
 
