@@ -180,7 +180,7 @@ Please output the results in the following JSON format:
         """
         try:
             response = self.client.models.generate_content(
-                model="gemini-2.5-flash-preview-04-17",
+                model="gemini-2.0-flash",
                 contents=[{"role": "user", "parts": [{"text": prompt}]}],
                 config=genai.types.GenerateContentConfig(
                     temperature=0.3,
