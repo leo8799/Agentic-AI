@@ -54,6 +54,24 @@ def driver_config(args):
         options.add_argument(
             "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
         )
+    
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-background-timer-throttling")
+    options.add_argument("--disable-backgrounding-occluded-windows")
+    options.add_argument("--disable-renderer-backgrounding")
+    options.add_argument("--disable-features=TranslateUI")
+    options.add_argument("--disable-ipc-flooding-protection")
+    options.add_argument("--remote-debugging-port=9222")
+    
+    import tempfile
+    import uuid
+    temp_dir = tempfile.gettempdir()
+    user_data_dir = os.path.join(temp_dir, f"chrome_user_data_{uuid.uuid4()}")
+    options.add_argument(f"--user-data-dir={user_data_dir}")
+    
     options.add_experimental_option(
         "prefs", {
             "download.default_directory": download_dir,
