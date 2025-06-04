@@ -17,7 +17,9 @@ class Settings:
         "http://localhost:5173",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
-        "http://127.0.0.1:5173"
+        "http://127.0.0.1:5173",
+        "http://140.115.126.192:3000",
+        "http://140.115.126.192:3001"
     ]
     
     OUTPUT_DIR: str = os.getenv("OUTPUT_DIR", "api_results")
